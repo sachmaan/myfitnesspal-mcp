@@ -109,6 +109,12 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 | `fitness_log_food` | Log a food to the real diary (top match, or an exact search candidate) |
 | `fitness_delete_food` | Remove a diary entry by name match |
 | `fitness_modify_food` | Replace an entry (or change its quantity) |
+| `fitness_list_custom` | Your custom foods ("My Foods"), saved meals and recipes, with ids, servings and nutrition |
+| `fitness_log_custom` | Log one of those by name; a saved meal is logged as its ingredients |
+| `fitness_create_food` | Create a private custom food |
+| `fitness_create_meal` | Save one logged meal of a day as a named saved meal ("Remember Meal") |
+| `fitness_create_recipe` | Create a private recipe from searched foods; MFP computes its nutrition |
+| `fitness_delete_custom` | Delete a custom food, saved meal or recipe (exact name only) |
 | `fitness_log_weight` | Log a weight measurement (updates the same day on re-log) |
 | `fitness_get_exercise` | Read the exercise diary (cardio + strength) |
 | `fitness_get_note` | Read the MyFitnessPal daily diary note (the "Notes" box) for a day |
@@ -120,6 +126,16 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 The high-accuracy logging flow: `fitness_search_food("greek yogurt")` returns
 candidates with macros and a `food_id`/`weight_id`; pass those to
 `fitness_log_food` to log exactly that item instead of trusting the top match.
+
+Your own items work the same way: `fitness_list_custom(kind="meals")` shows
+each saved meal with its ingredients, and `fitness_log_custom("My protein
+shake", meal="breakfast")` logs it; the result's `logged` field lists the
+entries MyFitnessPal actually added. To build a saved meal, log its foods into
+one meal of a day, then `fitness_create_meal("Office breakfast",
+meal="breakfast")`. A recipe takes the `external_id` of each ingredient from
+`fitness_search_food`, plus how many of which serving:
+`fitness_create_recipe("Banana bread", 8, [{"external_id": "...",
+"quantity": 3, "serving": "cup"}])`.
 
 Day summaries and trends read from a local SQLite cache that gap-fills from
 MyFitnessPal (first call on a fresh install fetches up to 30 days, one request

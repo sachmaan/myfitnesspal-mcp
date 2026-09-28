@@ -122,3 +122,15 @@ def test_bulk_export_reads_cache_without_client(local_store):
     )
     assert result["count"] == 1
     assert result["days"][0]["nutrition"]["calories"] == 1500.0
+
+
+def test_custom_item_tools_are_registered():
+    names = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    assert {
+        "fitness_list_custom",
+        "fitness_log_custom",
+        "fitness_create_food",
+        "fitness_create_meal",
+        "fitness_create_recipe",
+        "fitness_delete_custom",
+    } <= names

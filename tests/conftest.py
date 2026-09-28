@@ -6,10 +6,11 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, text="", json_data=None):
+    def __init__(self, status_code=200, text="", json_data=None, headers=None):
         self.status_code = status_code
         self.text = text
         self._json = json_data
+        self.headers = headers or {}
 
     def json(self):
         return self._json
@@ -42,6 +43,10 @@ class FakeSession:
     def post(self, url, **kwargs):
         self.calls.append(("POST", url, kwargs))
         return self._match("POST", url)
+
+    def delete(self, url, **kwargs):
+        self.calls.append(("DELETE", url, kwargs))
+        return self._match("DELETE", url)
 
 
 class FakeClient:
@@ -82,8 +87,10 @@ def _forget_searched_ids():
     from myfitnesspal_mcp import diary
 
     diary._searched_ids.clear()
+    diary._searched_external_ids.clear()
     yield
     diary._searched_ids.clear()
+    diary._searched_external_ids.clear()
 
 
 def diary_after_add(before_html, new_row):

@@ -5,7 +5,7 @@ from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from . import diary, mfp_client, refresh, sync
+from . import custom, diary, mfp_client, refresh, sync
 from .store import Store, trend_column
 
 mcp = FastMCP("myfitnesspal")
@@ -185,6 +185,153 @@ async def fitness_modify_food(
         result = diary.modify_food(client, day, meal, query, new_query, quantity)
         sync.refresh_day(store, client, day)
         return {"ok": True, **result}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_list_custom(
+    kind: str = "all", query: str | None = None, ctx: Context = None
+) -> dict:
+    """List your own MyFitnessPal items: custom foods ("My Foods"), saved meals
+    and recipes.
+
+    kind: all | foods | meals | recipes. query: optional case-insensitive
+    name filter. Each item has kind, name, food_id and servings
+    [{weight_id, serving}] (these ids work with fitness_log_food), plus
+    nutrition; meals also list their ingredients, recipes their recipe_id and
+    per-serving nutrition. To log one by name, use fitness_log_custom.
+    """
+
+    def op(store, client):
+        return custom.list_custom(client, kind, query)
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_log_custom(
+    name: str,
+    meal: str = "breakfast",
+    quantity: float = 1.0,
+    serving: str | None = None,
+    kind: str = "all",
+    date: str | None = None,
+    ctx: Context = None,
+) -> dict:
+    """Log one of your custom foods, saved meals or recipes by name.
+
+    name: the item's name as fitness_list_custom shows it (a unique part of it
+    works). A saved meal is logged as its ingredients. serving: pick one of the
+    item's servings by name (default: its first). quantity: how many servings.
+    kind: all | foods | meals | recipes, to narrow the name match.
+    meal: breakfast|lunch|dinner|snacks. date: YYYY-MM-DD (default: today).
+    `logged` lists the diary entries MyFitnessPal actually added.
+    """
+    day = parse_day(date)
+
+    def op(store, client):
+        result = custom.log_custom(client, day, meal, name, kind, quantity, serving)
+        sync.refresh_day(store, client, day)
+        return {"ok": True, **result, "day": store.day_record(day.isoformat())}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_create_food(
+    description: str,
+    calories: float,
+    protein: float,
+    carbs: float,
+    fat: float,
+    brand: str | None = None,
+    serving_size: float = 1,
+    serving_unit: str = "serving",
+    fiber: float | None = None,
+    sugar: float | None = None,
+    sodium: float | None = None,
+    saturated_fat: float | None = None,
+    ctx: Context = None,
+) -> dict:
+    """Create a private custom food in your MyFitnessPal "My Foods".
+
+    Nutrition (grams; sodium in mg) is for one serving of
+    serving_size x serving_unit, e.g. serving_size=1, serving_unit="bar".
+    Log it afterwards with fitness_log_custom.
+    """
+
+    def op(store, client):
+        made = custom.create_food(
+            client,
+            description,
+            calories,
+            protein,
+            carbs,
+            fat,
+            brand=brand,
+            serving_size=serving_size,
+            serving_unit=serving_unit,
+            fiber=fiber,
+            sugar=sugar,
+            sodium=sodium,
+            saturated_fat=saturated_fat,
+        )
+        return {"ok": True, **made}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_create_meal(
+    name: str, meal: str = "breakfast", date: str | None = None, ctx: Context = None
+) -> dict:
+    """Save what is logged in one meal of one day as a named saved meal (the
+    web's "Remember Meal"), so it can be logged again in one step.
+
+    Log the foods first (fitness_log_food / fitness_log_custom), then call
+    this. meal: breakfast|lunch|dinner|snacks. date: YYYY-MM-DD (default:
+    today). Refuses a name that already exists.
+    """
+    day = parse_day(date)
+
+    def op(store, client):
+        return {"ok": True, **custom.create_meal(client, name, day, meal)}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_create_recipe(
+    name: str, servings: float, ingredients: list[dict], ctx: Context = None
+) -> dict:
+    """Create a private recipe in MyFitnessPal. MyFitnessPal computes its
+    nutrition from the ingredients.
+
+    servings: how many servings the recipe makes.
+    ingredients: [{external_id, quantity, serving}], one per ingredient.
+    external_id comes from a fitness_search_food candidate (search first);
+    serving names one of that food's serving sizes (e.g. "cup"; default: its
+    first) and quantity is how many of it go in. Refuses a name that exists.
+    """
+
+    def op(store, client):
+        return {"ok": True, **custom.create_recipe(client, name, servings, ingredients)}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
+async def fitness_delete_custom(name: str, kind: str, ctx: Context = None) -> dict:
+    """Delete one of your custom foods, saved meals or recipes. This cannot be
+    undone.
+
+    name: the item's exact name as fitness_list_custom shows it (no partial
+    matches). kind: food | meal | recipe.
+    """
+
+    def op(store, client):
+        return {"ok": True, **custom.delete_custom(client, name, kind)}
 
     return await with_session(ctx, op)
 
