@@ -58,9 +58,9 @@ def fixture(name):
 def library(client):
     """The fake client with the three 'Add Food' tabs and the detail APIs."""
     s = client.session
-    s.route("POST", "food/load_my_foods", fixture("favorites_my_foods.html"))
-    s.route("POST", "food/load_meals", fixture("favorites_meals.html"))
-    s.route("POST", "food/load_recipes", fixture("favorites_recipes.html"))
+    s.route("GET", "food/load_my_foods", fixture("favorites_my_foods.html"))
+    s.route("GET", "food/load_meals", fixture("favorites_meals.html"))
+    s.route("GET", "food/load_recipes", fixture("favorites_recipes.html"))
     s.route(
         "GET", "api/services/users/foods/mine", FakeResponse(json_data=MY_FOODS_API)
     )
@@ -104,8 +104,30 @@ def test_list_custom_reads_all_three_kinds_with_details(library):
 def test_list_custom_filters_by_kind_and_query(library):
     items = custom.list_custom(library, kind="meals", query="SHAKE")["items"]
     assert [i["name"] for i in items] == ["My protein shake", "Protein shake, big"]
-    posts = [url for m, url, _ in library.session.calls if m == "POST"]
-    assert posts == ["https://www.myfitnesspal.com/food/load_meals"]
+    tabs = [(m, url) for m, url, _ in library.session.calls if "food/load_" in url]
+    assert tabs == [("GET", "https://www.myfitnesspal.com/food/load_meals")]
+    assert not [c for c in library.session.calls if c[0] == "POST"]
+
+
+def test_list_custom_reports_a_login_redirect_instead_of_no_items(library):
+    # MyFitnessPal answers a request it won't serve with a 302 to its login page.
+    # Following it gives a page with no rows, which read as "you have no items".
+    library.session.route(
+        "GET",
+        "food/load_meals",
+        FakeResponse(
+            status_code=302,
+            headers={"location": "https://www.myfitnesspal.com/account/login"},
+        ),
+    )
+    with pytest.raises(custom.NotLoggedIn, match="not logged in"):
+        custom.list_custom(library, kind="meals")
+
+
+def test_tab_requests_never_follow_redirects(library):
+    custom.list_custom(library, kind="foods")
+    kwargs = [kw for m, url, kw in library.session.calls if "food/load_" in url]
+    assert kwargs[0]["allow_redirects"] is False
 
 
 def test_list_custom_survives_a_failing_detail_api(library, make_response):
@@ -416,7 +438,7 @@ def test_recipe_details_follow_v2_paging(library, make_response):
         ),
     )
     library.session.route(
-        "POST",
+        "GET",
         "food/load_recipes",
         FakeResponse(
             text=(FIXTURES / "favorites_recipes.html")

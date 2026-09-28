@@ -1,7 +1,8 @@
 """Your own MyFitnessPal items: custom foods ("My Foods"), saved meals and recipes.
 
 Reading and logging go through the legacy "Add Food to Diary" tabs
-(POST /food/load_my_foods | load_meals | load_recipes). Each row there carries
+(GET /food/load_my_foods | load_meals | load_recipes; a POST without the page's
+csrf header is answered with a redirect to the login page). Each row there carries
 the food_id + weight_id pairs /food/add accepts, so logging reuses
 diary.push_food, with its before/after diary check. Logging a saved meal
 through its row expands it into its ingredients, as the web app does.
@@ -31,6 +32,12 @@ TABS = {"foods": "my_foods", "meals": "meals", "recipes": "recipes"}
 
 class NoSuchItem(LookupError):
     pass
+
+
+class NotLoggedIn(RuntimeError):
+    """MyFitnessPal redirected to its login page. The message says "not logged
+    in", which mfp_client.is_auth_error treats as an auth failure, so the
+    server refreshes the session and retries once."""
 
 
 def _clean(text: str) -> str:
@@ -108,11 +115,18 @@ def _macros(contents: dict, divisor: float = 1.0) -> dict:
 
 
 def _tab_rows(client, kind: str) -> list[dict]:
-    resp = client.session.post(
+    resp = client.session.get(
         _web(client, f"food/load_{TABS[kind]}"),
-        data={"meal": "0", "base_index": "0", "page": "1"},
+        params={"meal": "0", "page": "1"},
         headers=diary.api_headers(client),
+        allow_redirects=False,
     )
+    if 300 <= resp.status_code < 400:
+        where = (getattr(resp, "headers", None) or {}).get("location") or "elsewhere"
+        raise NotLoggedIn(
+            f"MyFitnessPal sent food/load_{TABS[kind]} to {where}: not logged in "
+            "for that page, so your saved items could not be read"
+        )
     resp.raise_for_status()
     if not resp.text.strip():
         return []
