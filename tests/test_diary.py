@@ -1,6 +1,7 @@
 import datetime
 
 import pytest
+from conftest import diary_after_add
 
 from myfitnesspal_mcp import diary
 
@@ -51,11 +52,28 @@ def test_search_food_survives_detail_failures(client):
     assert candidates[0]["protein"] is None
 
 
-def test_push_food_logs_top_match(client):
+NEW_ROW = (
+    '<tr class="meal_header"><td>Snacks</td></tr>'
+    '<tr><td><a data-food-entry-id="e9">Banana, 2 medium</a></td></tr>'
+)
+
+
+def logs_new_row(client, diary_html):
+    client.session.route(
+        "GET", "food/diary/tester", diary_after_add(diary_html, NEW_ROW)
+    )
+
+
+def test_push_food_logs_top_match(client, diary_html):
+    logs_new_row(client, diary_html)
     result = diary.push_food(client, TODAY, "snacks", "banana", quantity=2.0)
-    assert result == {"matched": "Banana", "food_id": "111"}
-    method, url, kwargs = client.session.calls[-1]
-    assert method == "POST"
+    assert result == {
+        "matched": "Banana",
+        "food_id": "111",
+        "logged": [{"meal": "snacks", "name": "Banana, 2 medium"}],
+    }
+    posts = [c for c in client.session.calls if c[0] == "POST"]
+    method, url, kwargs = posts[-1]
     assert "food/add" in url
     data = kwargs["data"]
     assert data["food_entry[food_id]"] == "111"
@@ -67,14 +85,40 @@ def test_push_food_logs_top_match(client):
     assert kwargs["headers"]["Authorization"] == "Bearer fake-token"
 
 
-def test_push_food_exact_candidate_uses_diary_csrf(client):
+def test_push_food_exact_candidate_uses_diary_csrf(client, diary_html):
+    logs_new_row(client, diary_html)
+    diary.search_food(client, "banana", with_macros=False)
     result = diary.push_food(
-        client, TODAY, "lunch", "Banana", food_id="777", weight_id="88"
+        client, TODAY, "lunch", "Banana Bread", food_id="222", weight_id="30"
     )
-    assert result["food_id"] == "777"
-    method, url, kwargs = client.session.calls[-1]
-    assert kwargs["data"]["food_entry[food_id]"] == "777"
+    assert result["food_id"] == "222"
+    posts = [c for c in client.session.calls if c[0] == "POST"]
+    method, url, kwargs = posts[-1]
+    assert kwargs["data"]["food_entry[food_id]"] == "222"
     assert kwargs["headers"]["X-CSRF-Token"] == "DIARYTOKEN"
+
+
+def test_push_food_refuses_ids_not_returned_by_search(client, diary_html):
+    # A caller (an LLM) can invent ids. /food/add answers 200 for any id and
+    # logs whatever food owns it, or nothing, so an unsearched pair is refused
+    # before anything is posted.
+    logs_new_row(client, diary_html)
+    with pytest.raises(diary.UnknownFoodId, match="fitness_search_food"):
+        diary.push_food(
+            client, TODAY, "breakfast", "Oatmeal", food_id="424242", weight_id="1"
+        )
+    assert not [c for c in client.session.calls if c[0] == "POST"]
+
+
+def test_push_food_refuses_half_an_id_pair(client):
+    with pytest.raises(diary.UnknownFoodId, match="both food_id and weight_id"):
+        diary.push_food(client, TODAY, "breakfast", "Banana", food_id="111")
+
+
+def test_push_food_errors_when_nothing_was_added(client):
+    # /food/add said 200 but the diary did not change: not ok.
+    with pytest.raises(diary.NothingLogged, match="no new diary entry"):
+        diary.push_food(client, TODAY, "snacks", "banana")
 
 
 def test_push_food_no_results(client, make_response):
@@ -166,7 +210,8 @@ def test_delete_food_no_match(client):
         diary.delete_food(client, TODAY, "coffee", meal="dinner")
 
 
-def test_modify_food_deletes_then_adds(client):
+def test_modify_food_deletes_then_adds(client, diary_html):
+    logs_new_row(client, diary_html)
     result = diary.modify_food(client, TODAY, "breakfast", "coffee", "banana")
     assert result == {
         "removed": "Coffee, 1 cup",

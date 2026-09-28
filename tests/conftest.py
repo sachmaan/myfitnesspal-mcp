@@ -30,7 +30,9 @@ class FakeSession:
     def _match(self, method, url):
         for (m, fragment), response in self.routes.items():
             if m == method and fragment in url:
-                return response
+                # a callable route answers from the calls so far (e.g. a diary
+                # page that changes once something was posted to food/add)
+                return response(self.calls) if callable(response) else response
         raise AssertionError(f"no fake route for {method} {url}")
 
     def get(self, url, **kwargs):
@@ -73,6 +75,28 @@ def search_html():
 @pytest.fixture
 def diary_html():
     return (FIXTURES / "diary.html").read_text()
+
+
+@pytest.fixture(autouse=True)
+def _forget_searched_ids():
+    from myfitnesspal_mcp import diary
+
+    diary._searched_ids.clear()
+    yield
+    diary._searched_ids.clear()
+
+
+def diary_after_add(before_html, new_row):
+    """A diary route that shows `new_row` in the table once food/add was posted."""
+    after_html = before_html.replace(
+        '<tr class="bottom">', f'{new_row}\n  <tr class="bottom">'
+    )
+
+    def respond(calls):
+        added = any(m == "POST" and "food/add" in url for m, url, _ in calls)
+        return FakeResponse(text=after_html if added else before_html)
+
+    return respond
 
 
 @pytest.fixture

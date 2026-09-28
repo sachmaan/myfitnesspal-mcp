@@ -25,6 +25,19 @@ MEALS = ("breakfast", "lunch", "dinner", "snacks")
 
 MEAL_ALIASES = {"snack": "snacks"}
 
+# (food_id, weight_id) pairs that search_food returned in this process. /food/add
+# answers 200 for any id: one that belongs to another food logs that food, and one
+# that matches nothing logs nothing. So push_food only takes ids a search produced.
+_searched_ids: set[tuple[str, str]] = set()
+
+
+class UnknownFoodId(ValueError):
+    pass
+
+
+class NothingLogged(RuntimeError):
+    pass
+
 
 def _normalize_meal(meal: str | None) -> str | None:
     if meal is None:
@@ -123,6 +136,7 @@ def search_food(
             "food_id": result["food_id"],
             "weight_id": result["weight_id"],
         }
+        _searched_ids.add((str(result["food_id"]), str(result["weight_id"])))
         if with_macros and result["external_id"]:
             try:
                 details = client._get_food_item_details(int(result["external_id"]))
@@ -174,8 +188,25 @@ def push_food(
     food_id: str | None = None,
     weight_id: str | None = None,
 ) -> dict:
-    if food_id is not None and weight_id is not None:
-        _, csrf = diary_page(client, day)
+    """Adds a food and returns what MyFitnessPal actually logged.
+
+    food_id + weight_id must be a pair that search_food returned; otherwise the
+    top search match for `query` is logged. The diary is read before and after
+    the add, and an add that created no entry raises NothingLogged.
+    """
+    if (food_id is None) != (weight_id is None):
+        raise UnknownFoodId(
+            "pass both food_id and weight_id from one fitness_search_food "
+            "candidate, or neither"
+        )
+    if food_id is not None:
+        if (str(food_id), str(weight_id)) not in _searched_ids:
+            raise UnknownFoodId(
+                f"food_id {food_id} / weight_id {weight_id} was not returned by "
+                "fitness_search_food on this server, so nothing was logged. Search "
+                "first and pass one candidate's food_id and weight_id exactly."
+            )
+        doc, csrf = diary_page(client, day)
         matched = query
     else:
         results, csrf = food_search(client, query)
@@ -185,12 +216,25 @@ def push_food(
         food_id = top["food_id"]
         weight_id = top["weight_id"]
         matched = top["name"]
+        doc, _ = diary_page(client, day)
     if not csrf:
         raise RuntimeError(
             "couldn't read the MyFitnessPal csrf token (try re-authenticating)"
         )
+    before = {e["entry_id"] for e in diary_entries(doc)}
     add_food_to_diary(client, food_id, weight_id, csrf, meal, day, quantity)
-    return {"matched": matched, "food_id": food_id}
+    after, _ = diary_page(client, day)
+    logged = [
+        {"meal": e["meal"], "name": e["name"]}
+        for e in diary_entries(after)
+        if e["entry_id"] not in before
+    ]
+    if not logged:
+        raise NothingLogged(
+            f"MyFitnessPal accepted '{matched}' but no new diary entry appeared on "
+            f"{day.isoformat()}; nothing was logged"
+        )
+    return {"matched": matched, "food_id": food_id, "logged": logged}
 
 
 def diary_page(client, day: date):
