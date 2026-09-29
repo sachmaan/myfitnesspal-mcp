@@ -45,7 +45,7 @@ class FakeDay:
             "carbohydrates": 200,
             "fat": 70,
         }
-        self.goals = {"calories": 2200}
+        self.goals = {"calories": 2200, "protein": 160, "carbohydrates": 212, "fat": 50}
         self.water = 750
         self.meals = [
             FakeMeal(
@@ -102,6 +102,19 @@ def test_refresh_day_populates_store(store):
     assert nutrition["carbs"] == 200.0
     assert nutrition["water_ml"] == 750.0
     assert nutrition["goal_calories"] == 2200.0
+    record = store.day_record(TODAY.isoformat())
+    assert record["goals"] == {
+        "calories": 2200.0,
+        "protein": 160.0,
+        "carbs": 212.0,
+        "fat": 50.0,
+    }
+    assert record["remaining"] == {
+        "calories": 100.0,
+        "protein": 10.0,
+        "carbs": 12.0,
+        "fat": -20.0,
+    }
     entries = store.diary(TODAY.isoformat())
     assert entries == [
         {
