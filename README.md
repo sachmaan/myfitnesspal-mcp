@@ -122,7 +122,7 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 | `fitness_log_note` | Write that daily note to MFP (replace, or `append` a new line) |
 | `fitness_log_feel` | Save a subjective "how I feel" note (stored locally, never sent to MFP) |
 | `fitness_get_trends` | One metric over a date range: weight, calories_in, protein, carbs, fat |
-| `fitness_bulk_export` | Whole date range in one call, for analysis |
+| `fitness_bulk_export` | Whole date range in one call, for analysis (incl. whether each day is marked complete) |
 
 The high-accuracy logging flow: `fitness_search_food("greek yogurt")` returns
 candidates with macros and a `food_id`/`weight_id`; pass those to

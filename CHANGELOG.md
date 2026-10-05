@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Day records and `fitness_bulk_export` carry `complete` (whether the day is
+  marked complete in MyFitnessPal). It is read from the diary page the sync
+  already fetches; days cached before this are fetched once more, and the last
+  7 incomplete days are rechecked on each daily sync so a day completed later
+  in the app catches up. `fitness_complete_day` updates the cache too.
 - `fitness_complete_day`: mark a diary day complete (the Food tab's "Complete
   This Entry"), reopen it (`complete=false`, "Make Additional Entries"), or
   report its state (`complete=null`). The change is confirmed by reading the
@@ -33,6 +38,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A day completed under MyFitnessPal's calorie minimum read as not complete:
+  python-myfitnesspal checks the first child of `#complete_day`, which is a
+  warning on such days. The client now reads the completion button's link.
 - `fitness_log_food` no longer reports `ok` for adds that logged the wrong
   food or nothing. MyFitnessPal's `/food/add` answers 200 for any id: an id that
   belongs to another food logs that food, and one that matches nothing logs

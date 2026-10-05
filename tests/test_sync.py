@@ -47,6 +47,7 @@ class FakeDay:
         }
         self.goals = {"calories": 2200, "protein": 160, "carbohydrates": 212, "fat": 50}
         self.water = 750
+        self.complete = True
         self.meals = [
             FakeMeal(
                 "breakfast", [FakeEntry("Oats", {"calories": 300, "protein": 10})]
@@ -103,6 +104,7 @@ def test_refresh_day_populates_store(store):
     assert nutrition["water_ml"] == 750.0
     assert nutrition["goal_calories"] == 2200.0
     record = store.day_record(TODAY.isoformat())
+    assert record["complete"] is True
     assert record["goals"] == {
         "calories": 2200.0,
         "protein": 160.0,
@@ -154,7 +156,7 @@ def test_poll_backfills_weight_for_already_cached_day(store):
     window_start = TODAY - datetime.timedelta(days=2)
     yesterday = TODAY - datetime.timedelta(days=1)
     for day in (window_start, yesterday):
-        store.upsert_nutrition(day.isoformat(), calories=2000.0)
+        store.upsert_nutrition(day.isoformat(), calories=2000.0, diary_complete=1)
         store.mark_diary_synced(day.isoformat())
 
     client = FakeSyncClient()
@@ -228,3 +230,44 @@ def test_poll_skips_bad_days_without_auth_errors(store):
     client = FlakyClient()
     sync.poll(store, client, days=2, force=True)
     assert len(client.fetched) == 2
+
+
+def cached(store, day, complete):
+    store.upsert_nutrition(day.isoformat(), calories=2000.0, diary_complete=complete)
+    store.mark_diary_synced(day.isoformat())
+
+
+def test_poll_rechecks_recent_incomplete_days(store):
+    """A past day can be completed later in the app; recent incomplete days are
+    fetched again so `complete` catches up. Older ones are left alone."""
+    yesterday = TODAY - datetime.timedelta(days=1)
+    ten_days_ago = TODAY - datetime.timedelta(days=10)
+    cached(store, yesterday, 0)
+    cached(store, ten_days_ago, 0)
+    for n in range(2, 12):
+        day = TODAY - datetime.timedelta(days=n)
+        if day != ten_days_ago:
+            cached(store, day, 1)
+    client = FakeSyncClient()
+    sync.poll(store, client, days=12, force=True, today=TODAY)
+    assert client.fetched == [TODAY, yesterday]
+    assert store.day_record(yesterday.isoformat())["complete"] is True
+
+
+def test_poll_leaves_recent_complete_days_alone(store):
+    yesterday = TODAY - datetime.timedelta(days=1)
+    cached(store, yesterday, 1)
+    client = FakeSyncClient()
+    sync.poll(store, client, days=2, force=True, today=TODAY)
+    assert client.fetched == [TODAY]
+
+
+def test_poll_fetches_cached_day_with_unknown_completion(store):
+    """Days cached before completion was tracked are fetched once more."""
+    yesterday = TODAY - datetime.timedelta(days=1)
+    store.upsert_nutrition(yesterday.isoformat(), calories=2000.0)
+    store.mark_diary_synced(yesterday.isoformat())
+    client = FakeSyncClient()
+    sync.poll(store, client, days=2, force=True, today=TODAY)
+    assert client.fetched == [TODAY, yesterday]
+    assert store.day_record(yesterday.isoformat())["complete"] is True

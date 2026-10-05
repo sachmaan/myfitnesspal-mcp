@@ -56,6 +56,14 @@ class CurlCffiClient(myfitnesspal.Client):
         self._auth_data = self._get_auth_data()
         self._user_metadata = self._get_user_metadata()
 
+    def _get_completion(self, document) -> bool:
+        """Day.complete, read from the completion button's link. The upstream
+        version reads the first child of #complete_day, which is a warning
+        paragraph on a day completed under MFP's calorie minimum."""
+        from .diary import day_completion
+
+        return bool(day_completion(document))
+
     def _get_user_metadata(self):
         """MFP's v2 users endpoint 500s for some accounts; fall back to the
         configured username, which is all the diary URLs need."""
