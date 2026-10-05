@@ -115,6 +115,7 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 | `fitness_create_meal` | Save one logged meal of a day as a named saved meal ("Remember Meal") |
 | `fitness_create_recipe` | Create a private recipe from searched foods; MFP computes its nutrition |
 | `fitness_delete_custom` | Delete a custom food, saved meal or recipe (exact name only) |
+| `fitness_complete_day` | Mark a day complete ("Complete This Entry"), reopen it, or check it |
 | `fitness_log_weight` | Log a weight measurement (updates the same day on re-log) |
 | `fitness_get_exercise` | Read the exercise diary (cardio + strength) |
 | `fitness_get_note` | Read the MyFitnessPal daily diary note (the "Notes" box) for a day |

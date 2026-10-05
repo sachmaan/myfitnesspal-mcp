@@ -256,6 +256,87 @@ def diary_page(client, day: date):
     return doc, tokens[0]
 
 
+def day_completion(doc) -> bool | None:
+    """Whether the diary page's day is marked complete, read from its
+    'Complete This Entry' / 'Make Additional Entries' button. None when the
+    page has no completion section (not your diary, or a page change)."""
+    boxes = doc.xpath("//div[@id='complete_day']")
+    if not boxes:
+        return None
+    box = boxes[0]
+    if box.xpath(".//a[contains(@href, 'day_incomplete')]") or box.xpath(
+        ".//*[contains(@class, 'day_complete_message')]"
+    ):
+        return True
+    if box.xpath(".//a[contains(@href, 'day_complete')]") or box.xpath(
+        ".//*[contains(@class, 'day_incomplete_message')]"
+    ):
+        return False
+    return None
+
+
+def _completion_message(doc) -> str:
+    boxes = doc.xpath("//div[@id='complete_day']")
+    if not boxes:
+        return ""
+    return " ".join(boxes[0].text_content().split())
+
+
+def set_day_complete(client, day: date, complete: bool | None = True) -> dict:
+    """Marks a diary day complete ('Complete This Entry'), reopens it
+    (complete=False, 'Make Additional Entries'), or only reports its state
+    (complete=None). The change is confirmed by reading the diary again.
+
+    MyFitnessPal posts a completed day to the news feed with a five-week weight
+    projection, unless the day is under its calorie minimum."""
+    doc, csrf = diary_page(client, day)
+    current = day_completion(doc)
+    if current is None:
+        raise RuntimeError(
+            f"the diary page for {day.isoformat()} has no 'Complete This Entry' section"
+        )
+    if complete is None or current == complete:
+        return {
+            "day": day.isoformat(),
+            "complete": current,
+            "changed": False,
+            "message": _completion_message(doc),
+        }
+    action = "day_complete" if complete else "day_incomplete"
+    resp = client.session.post(
+        parse.urljoin(client.BASE_URL_SECURE, f"food/{action}?date={day.isoformat()}"),
+        headers=api_headers(
+            client,
+            {
+                "X-CSRF-Token": csrf,
+                "Origin": client.BASE_URL_SECURE.rstrip("/"),
+                "Referer": parse.urljoin(
+                    client.BASE_URL_SECURE,
+                    f"food/diary/{client.effective_username}?date={day.isoformat()}",
+                ),
+            },
+        ),
+    )
+    if resp.status_code not in (200, 204):
+        raise RuntimeError(
+            f"MyFitnessPal /food/{action} returned HTTP {resp.status_code}"
+        )
+    after, _ = diary_page(client, day)
+    state = day_completion(after)
+    if state != complete:
+        wanted = "complete" if complete else "reopened"
+        raise RuntimeError(
+            f"MyFitnessPal accepted the request but {day.isoformat()} is still not "
+            f"{wanted}"
+        )
+    return {
+        "day": day.isoformat(),
+        "complete": state,
+        "changed": True,
+        "message": _completion_message(after),
+    }
+
+
 def diary_entries(doc) -> list[dict]:
     """Walks the diary table: meal_header rows delimit meals; the
     data-food-entry-id anchors that follow belong to that meal."""

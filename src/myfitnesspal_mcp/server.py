@@ -192,6 +192,28 @@ async def fitness_modify_food(
 
 
 @mcp.tool()
+async def fitness_complete_day(
+    complete: bool | None = True, date: str | None = None, ctx: Context = None
+) -> dict:
+    """Mark a MyFitnessPal diary day complete (the Food tab's "Complete This
+    Entry" button), or reopen it.
+
+    complete: true marks it complete, false reopens it ("Make Additional
+    Entries"), null only reports whether it is complete. date: YYYY-MM-DD
+    (default: today). Completing a day posts it to your MyFitnessPal news feed
+    with a five-week weight projection (MFP skips both when the day is under its
+    calorie minimum); `message` is what MFP shows. The result is read back from
+    the diary.
+    """
+    day = parse_day(date)
+
+    def op(store, client):
+        return {"ok": True, **diary.set_day_complete(client, day, complete)}
+
+    return await with_session(ctx, op)
+
+
+@mcp.tool()
 async def fitness_list_custom(
     kind: str = "all", query: str | None = None, ctx: Context = None
 ) -> dict:
