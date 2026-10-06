@@ -133,4 +133,5 @@ def test_custom_item_tools_are_registered():
         "fitness_create_meal",
         "fitness_create_recipe",
         "fitness_delete_custom",
+        "fitness_complete_day",
     } <= names

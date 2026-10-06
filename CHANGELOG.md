@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `fitness_complete_day`: mark a diary day complete (the Food tab's "Complete
+  This Entry"), reopen it (`complete=false`, "Make Additional Entries"), or
+  report its state (`complete=null`). The change is confirmed by reading the
+  diary again; MyFitnessPal's message (weight projection or low-calorie
+  warning) is returned.
 - Custom foods, saved meals and recipes: `fitness_list_custom` (with ids,
   servings, nutrition, meal ingredients), `fitness_log_custom` (log by name; a
   saved meal expands into its ingredients), `fitness_create_food`,
