@@ -109,6 +109,13 @@ def test_migrates_pre_diary_synced_database(tmp_path):
     legacy.close()
 
     store = Store(path)
+    # macro goal columns arrive empty on an old database
+    assert store.day_record("2026-07-01")["goals"] == {
+        "calories": None,
+        "protein": None,
+        "carbs": None,
+        "fat": None,
+    }
     assert store.days_with_synced_diary("2026-07-01", "2026-07-03") == {
         "2026-07-01",
         "2026-07-02",
@@ -143,3 +150,51 @@ def test_mark_synced_roundtrip(store):
     assert store.last_synced_on() is None
     store.mark_synced()
     assert store.last_synced_on() is not None
+
+
+def test_day_record_goals_and_remaining(store):
+    store.upsert_nutrition(
+        "2026-07-05",
+        calories=1377.0,
+        protein=126.0,
+        carbs=112.0,
+        fat=38.0,
+        goal_calories=1938.0,
+        goal_protein=160.0,
+        goal_carbs=212.0,
+        goal_fat=50.0,
+    )
+    record = store.day_record("2026-07-05")
+    assert record["goals"] == {
+        "calories": 1938.0,
+        "protein": 160.0,
+        "carbs": 212.0,
+        "fat": 50.0,
+    }
+    assert record["remaining"] == {
+        "calories": 561.0,
+        "protein": 34.0,
+        "carbs": 100.0,
+        "fat": 12.0,
+    }
+
+
+def test_day_record_remaining_is_none_without_a_goal(store):
+    store.upsert_nutrition("2026-07-06", calories=500.0)
+    record = store.day_record("2026-07-06")
+    assert record["remaining"] == {
+        "calories": None,
+        "protein": None,
+        "carbs": None,
+        "fat": None,
+    }
+
+
+def test_day_record_empty_day_has_goals_block(store):
+    record = store.day_record("2026-07-07")
+    assert record["goals"] == {
+        "calories": None,
+        "protein": None,
+        "carbs": None,
+        "fat": None,
+    }

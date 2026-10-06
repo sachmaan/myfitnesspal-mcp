@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
   `fitness_create_recipe` (from searched foods; MyFitnessPal computes the
   nutrition) and `fitness_delete_custom` (exact name only). Everything created
   is private.
+- Day records (`fitness_get_day`, and the `day` returned by the logging
+  tools) include `goals` (the day's MyFitnessPal calorie, protein, carb and
+  fat targets) and `remaining` (goal minus logged). Existing caches gain the
+  new goal columns on first open.
 - `fitness_search_food` candidates include `external_id`, the v2 food id that
   recipe ingredients use.
 - Contributor documentation: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,

@@ -72,7 +72,9 @@ async def with_session(ctx: Context, op: Callable[[Store, Any], Any]) -> Any:
 @mcp.tool()
 async def fitness_get_day(date: str | None = None, ctx: Context = None) -> dict:
     """Nutrition summary, diary entries, the MyFitnessPal daily note, and the
-    local feel note for a day.
+    local feel note for a day. `goals` holds the day's MyFitnessPal targets
+    (calories, protein, carbs, fat) and `remaining` is goal minus what is
+    logged (negative means over the goal).
 
     date: YYYY-MM-DD (default: today).
     """
