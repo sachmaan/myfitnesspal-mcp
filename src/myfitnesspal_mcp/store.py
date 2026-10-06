@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS day_nutrition (
     diary_synced INTEGER NOT NULL DEFAULT 0,
     goal_protein REAL,
     goal_carbs REAL,
-    goal_fat REAL
+    goal_fat REAL,
+    diary_complete INTEGER
 );
 CREATE TABLE IF NOT EXISTS diary_entry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +57,7 @@ NUTRITION_FIELDS = (
     "goal_protein",
     "goal_carbs",
     "goal_fat",
+    "diary_complete",
 )
 
 # The day's MyFitnessPal goals, keyed like the actuals they are compared with.
@@ -125,9 +127,16 @@ class Store:
                 "OR goal_calories IS NOT NULL"
             )
             self.conn.commit()
-        for column in ("goal_protein", "goal_carbs", "goal_fat"):
+        for column, kind in (
+            ("goal_protein", "REAL"),
+            ("goal_carbs", "REAL"),
+            ("goal_fat", "REAL"),
+            ("diary_complete", "INTEGER"),
+        ):
             if column not in columns:
-                self.conn.execute(f"ALTER TABLE day_nutrition ADD COLUMN {column} REAL")
+                self.conn.execute(
+                    f"ALTER TABLE day_nutrition ADD COLUMN {column} {kind}"
+                )
                 self.conn.commit()
 
     def upsert_nutrition(self, day: str, **fields) -> None:
@@ -235,6 +244,24 @@ class Store:
         ).fetchall()
         return {r["day"] for r in rows}
 
+    def days_missing_completion(self, start: str, end: str) -> set[str]:
+        """Synced days whose completion was never read (cached before it was
+        tracked)."""
+        rows = self.conn.execute(
+            "SELECT day FROM day_nutrition WHERE day >= ? AND day <= ? "
+            "AND diary_synced = 1 AND diary_complete IS NULL",
+            (start, end),
+        ).fetchall()
+        return {r["day"] for r in rows}
+
+    def days_marked_complete(self, start: str, end: str) -> set[str]:
+        rows = self.conn.execute(
+            "SELECT day FROM day_nutrition WHERE day >= ? AND day <= ? "
+            "AND diary_complete = 1",
+            (start, end),
+        ).fetchall()
+        return {r["day"] for r in rows}
+
     def trend(self, metric: str, start: str, end: str) -> list[dict]:
         rows = self.conn.execute(
             f"SELECT day, {trend_column(metric)} AS value FROM day_nutrition "
@@ -253,6 +280,16 @@ class Store:
             for name, column in GOAL_COLUMNS.items()
         }
 
+    def complete(self, day: str) -> bool | None:
+        """Whether the day is marked complete in MyFitnessPal ("Complete This
+        Entry"), as of the last fetch; None if never fetched."""
+        row = self.conn.execute(
+            "SELECT diary_complete FROM day_nutrition WHERE day = ?", (day,)
+        ).fetchone()
+        if row is None or row["diary_complete"] is None:
+            return None
+        return bool(row["diary_complete"])
+
     def day_record(self, day: str) -> dict:
         """The cached day. `goals` are MyFitnessPal's targets for that day and
         `remaining` is goal minus what is logged (negative: over the goal)."""
@@ -268,6 +305,7 @@ class Store:
         }
         return {
             "day": day,
+            "complete": self.complete(day),
             "nutrition": nutrition,
             "goals": goals,
             "remaining": remaining,

@@ -135,3 +135,30 @@ def test_custom_item_tools_are_registered():
         "fitness_delete_custom",
         "fitness_complete_day",
     } <= names
+
+
+def test_complete_day_tool_updates_the_cache(local_store, monkeypatch):
+    from myfitnesspal_mcp import diary
+
+    monkeypatch.setattr(mfp_client, "get_client", lambda: object())
+    monkeypatch.setattr(
+        diary,
+        "set_day_complete",
+        lambda client, day, complete: {
+            "day": day.isoformat(),
+            "complete": True,
+            "changed": True,
+            "message": "done",
+        },
+    )
+    result = asyncio.run(server.fitness_complete_day(complete=True, date="2026-07-08"))
+    assert result["complete"] is True
+    assert local_store.day_record("2026-07-08")["complete"] is True
+
+
+def test_bulk_export_includes_complete(local_store):
+    local_store.upsert_nutrition("2026-07-05", calories=1800.0, diary_complete=1)
+    result = asyncio.run(
+        server.fitness_bulk_export(start="2026-07-01", end="2026-07-08")
+    )
+    assert result["days"][0]["complete"] is True

@@ -35,3 +35,18 @@ def test_username_override_used_when_profile_fails(monkeypatch):
 def test_is_auth_error_matches_expired_language():
     assert mfp_client.is_auth_error(RuntimeError("401 Unauthorized"))
     assert not mfp_client.is_auth_error(RuntimeError("no food found"))
+
+
+def test_client_reads_completion_from_the_button():
+    # python-myfitnesspal reads the first child of #complete_day; a day completed
+    # under MFP's calorie minimum starts with a warning paragraph instead.
+    from lxml import html as lh
+
+    page = lh.fromstring(
+        '<div id="complete_day"><p class="starvation-mode-warning">low</p>'
+        '<a class="button" href="/food/day_incomplete?date=2026-07-08">Make Additional'
+        " Entries</a></div>"
+    )
+    assert mfp_client.CurlCffiClient._get_completion(None, page) is True
+    empty = lh.fromstring("<div>no section</div>")
+    assert mfp_client.CurlCffiClient._get_completion(None, empty) is False

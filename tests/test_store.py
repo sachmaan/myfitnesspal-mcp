@@ -109,6 +109,8 @@ def test_migrates_pre_diary_synced_database(tmp_path):
     legacy.close()
 
     store = Store(path)
+    # completion is unknown on an old database until the day is fetched again
+    assert store.day_record("2026-07-01")["complete"] is None
     # macro goal columns arrive empty on an old database
     assert store.day_record("2026-07-01")["goals"] == {
         "calories": None,
@@ -198,3 +200,21 @@ def test_day_record_empty_day_has_goals_block(store):
         "carbs": None,
         "fat": None,
     }
+
+
+def test_day_record_complete_flag(store):
+    store.upsert_nutrition("2026-07-08", calories=1900.0, diary_complete=1)
+    store.upsert_nutrition("2026-07-09", calories=1500.0, diary_complete=0)
+    assert store.day_record("2026-07-08")["complete"] is True
+    assert store.day_record("2026-07-09")["complete"] is False
+    assert store.day_record("2026-07-10")["complete"] is None
+
+
+def test_export_range_carries_complete(store):
+    store.upsert_nutrition("2026-07-08", calories=1900.0, diary_complete=1)
+    store.upsert_nutrition("2026-07-09", calories=1500.0, diary_complete=0)
+    days = store.export_range("2026-07-01", "2026-07-31")
+    assert [(d["day"], d["complete"]) for d in days] == [
+        ("2026-07-08", True),
+        ("2026-07-09", False),
+    ]
