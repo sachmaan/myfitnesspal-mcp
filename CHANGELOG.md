@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Custom foods, saved meals and recipes: `fitness_list_custom` (with ids,
+  servings, nutrition, meal ingredients), `fitness_log_custom` (log by name; a
+  saved meal expands into its ingredients), `fitness_create_food`,
+  `fitness_create_meal` (save a logged meal, like the web's "Remember Meal"),
+  `fitness_create_recipe` (from searched foods; MyFitnessPal computes the
+  nutrition) and `fitness_delete_custom` (exact name only). Everything created
+  is private.
+- `fitness_search_food` candidates include `external_id`, the v2 food id that
+  recipe ingredients use.
 - Contributor documentation: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
   `SECURITY.md`, issue and pull request templates, `CODEOWNERS`.
 - Ruff lint and format checks in CI, with a `pre-commit` config.

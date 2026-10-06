@@ -29,6 +29,8 @@ MEAL_ALIASES = {"snack": "snacks"}
 # answers 200 for any id: one that belongs to another food logs that food, and one
 # that matches nothing logs nothing. So push_food only takes ids a search produced.
 _searched_ids: set[tuple[str, str]] = set()
+# v2 food ids (a search result's external_id) likewise, for recipe ingredients.
+_searched_external_ids: set[str] = set()
 
 
 class UnknownFoodId(ValueError):
@@ -135,8 +137,11 @@ def search_food(
             "verified": None,
             "food_id": result["food_id"],
             "weight_id": result["weight_id"],
+            "external_id": result["external_id"],
         }
         _searched_ids.add((str(result["food_id"]), str(result["weight_id"])))
+        if result["external_id"]:
+            _searched_external_ids.add(str(result["external_id"]))
         if with_macros and result["external_id"]:
             try:
                 details = client._get_food_item_details(int(result["external_id"]))
