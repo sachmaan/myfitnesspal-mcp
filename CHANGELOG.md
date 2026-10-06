@@ -15,6 +15,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `fitness_log_food` no longer reports `ok` for adds that logged the wrong
+  food or nothing. MyFitnessPal's `/food/add` answers 200 for any id: an id that
+  belongs to another food logs that food, and one that matches nothing logs
+  nothing. `food_id` + `weight_id` must now be a pair that `fitness_search_food`
+  returned in the same server process, and each add reads the diary before and
+  after it. An add that created no entry is an error, and the result's new
+  `logged` field lists the entries that were actually added.
 - Gap-fill now keys off an explicit `diary_synced` flag instead of row
   existence. Previously a weight-only row (from `fitness_log_weight` on a past
   date, or from the weigh-in backfill after a failed day fetch) made sync treat

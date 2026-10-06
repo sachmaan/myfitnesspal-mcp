@@ -118,8 +118,10 @@ async def fitness_log_food(
     """Log a food to the real MyFitnessPal diary.
 
     Searches for `query` and logs the top match. To log an exact item, pass
-    the food_id + weight_id of a fitness_search_food candidate (query is then
-    used as the display name). meal: breakfast|lunch|dinner|snacks.
+    the food_id + weight_id of a fitness_search_food candidate exactly (query is
+    then used as the display name); ids that no search on this server returned
+    are refused. `logged` in the result lists the entries MyFitnessPal actually
+    added — check it matches what you meant. meal: breakfast|lunch|dinner|snacks.
     date: YYYY-MM-DD (default: today).
     """
     day = parse_day(date)
