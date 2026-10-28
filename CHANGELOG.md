@@ -23,6 +23,8 @@ All notable changes to this project are documented here. The format follows
   or a recipe.
 - `fitness_search_food` candidates include `external_id`, which
   `fitness_create_custom` takes for each recipe ingredient.
+- `fitness_delete_custom` deletes a custom food, saved meal or recipe by
+  exact name. It deletes nothing when it can't tell which item a name means.
 - Food log results include `added_entries`: the diary entries MyFitnessPal
   actually added, read back from the diary.
 - Day records (`fitness_get_day`, the `day` in write results, and
