@@ -61,8 +61,33 @@ def test_log_food_posts_one_intent_before_returning(monkeypatch):
         "record_key": "2015-01-01",
     }
     assert i["expected"] == {"entry_name": "Peanut Butter, 1 tbsp"}
-    assert i["called_at"].endswith("Z")
+    assert i["called_at"].endswith("Z") and i["subject"] == "household"
     json.dumps(i)
+
+
+def test_post_targets_the_tool_path(monkeypatch):
+    seen = {}
+
+    class R:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"intent_id": "01X", "tool": "mfp_fitness_log_food"}'
+
+    def fake_urlopen(req, timeout=0):
+        seen["url"] = req.full_url
+        seen["body"] = json.loads(req.data)
+        return R()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setenv("INTENTS_SUBJECT", "sachin")
+    intent = intents.build("fitness_log_food", {"date": "2015-01-01"}, {"logged": "x", "date": "2015-01-01"}, "openwebui")
+    assert intents.post(intent, "http://lakemcp:8080/actions") == "01X"
+    assert seen["url"] == "http://lakemcp:8080/actions/mfp_fitness_log_food" and seen["body"]["subject"] == "sachin"
 
 
 def test_error_is_recorded_then_raised(monkeypatch):

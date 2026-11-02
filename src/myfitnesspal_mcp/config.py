@@ -75,3 +75,8 @@ def intents_url() -> str | None:
 
 def intents_default_actor() -> str:
     return os.environ.get("INTENTS_DEFAULT_ACTOR", "unknown")
+
+
+def intents_subject() -> str:
+    """The lake subject the intents carry (the account owner)."""
+    return os.environ.get("INTENTS_SUBJECT", "household")
