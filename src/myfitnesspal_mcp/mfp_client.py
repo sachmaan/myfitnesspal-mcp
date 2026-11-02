@@ -41,6 +41,14 @@ class ProfileUnavailable(NotConnectedError):
     pass
 
 
+def reconnect_hint() -> str:
+    """What to tell the person when the session is gone: the auth service page on the
+    platform (chat.md R-CHAT-033), else the local auth command."""
+    if config.auth_url():
+        return f"MyFitnessPal session expired or not connected: {config.auth_page_hint()}, then retry."
+    return RECONNECT_HINT
+
+
 _AUTH_ERROR_PATTERN = re.compile(
     r"\b(401|403|unauthorized|forbidden|csrf|login|log in|logged in|session|token)\b",
     re.IGNORECASE,
@@ -182,13 +190,16 @@ def get_client() -> CurlCffiClient:
     global _client
     if _client is not None:
         return _client
-    cookies = auth.load_cookies()
+    try:
+        cookies = auth.load_cookies()
+    except auth.CredentialUnavailable as exc:
+        raise NotConnectedError(str(exc)) from None
     if not cookies:
-        raise NotConnectedError(RECONNECT_HINT)
+        raise NotConnectedError(reconnect_hint())
     try:
         _client = build_client(cookies)
     except Exception as exc:
-        raise NotConnectedError(f"{RECONNECT_HINT} (auth failed: {exc})") from exc
+        raise NotConnectedError(f"{reconnect_hint()} (auth failed: {exc})") from exc
     session_persistence.persist_session(_client)
     return _client
 
