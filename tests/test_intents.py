@@ -33,7 +33,12 @@ def test_log_food_posts_one_intent_before_returning(monkeypatch):
     posts = Posts()
 
     async def fake_log_food(**kw):
-        return {"ok": True, "logged": "Peanut Butter, 1 tbsp", "date": "2015-01-01"}
+        return {
+            "ok": True,
+            "logged": "Butter",
+            "added_entries": [{"meal": "snacks", "name": "Butter, 1 tbsp"}],
+            "date": "2015-01-01",
+        }
 
     fn = intents.wrap("fitness_log_food", fake_log_food, posts)
     reply = asyncio.run(
@@ -45,7 +50,7 @@ def test_log_food_posts_one_intent_before_returning(monkeypatch):
             ctx=Ctx("openwebui"),
         )
     )
-    assert reply["intent_id"] == "01INTENT" and len(posts.bodies) == 1
+    assert "intent_id" not in reply and len(posts.bodies) == 1
     i = posts.bodies[0]
     assert i["tool"] == "mfp_fitness_log_food" and i["actor"] == "openwebui"
     assert i["request"] == {
@@ -54,13 +59,13 @@ def test_log_food_posts_one_intent_before_returning(monkeypatch):
         "meal": "snacks",
         "quantity": 1,
     }
-    assert i["reply"]["logged"] == "Peanut Butter, 1 tbsp"
+    assert i["reply"] == reply
     assert i["target"] == {
         "source": "mfp",
         "stream": "diary",
         "record_key": "2015-01-01",
     }
-    assert i["expected"] == {"entry_name": "Peanut Butter, 1 tbsp"}
+    assert i["expected"] == {"diary": "Butter, 1 tbsp"}
     assert i["called_at"].endswith("Z") and i["subject"] == "household"
     json.dumps(i)
 
@@ -85,9 +90,17 @@ def test_post_targets_the_tool_path(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     monkeypatch.setenv("INTENTS_SUBJECT", "sachin")
-    intent = intents.build("fitness_log_food", {"date": "2015-01-01"}, {"logged": "x", "date": "2015-01-01"}, "openwebui")
+    intent = intents.build(
+        "fitness_log_food",
+        {"date": "2015-01-01"},
+        {"logged": "x", "date": "2015-01-01"},
+        "openwebui",
+    )
     assert intents.post(intent, "http://lakemcp:8080/actions") == "01X"
-    assert seen["url"] == "http://lakemcp:8080/actions/mfp_fitness_log_food" and seen["body"]["subject"] == "sachin"
+    assert (
+        seen["url"] == "http://lakemcp:8080/actions/mfp_fitness_log_food"
+        and seen["body"]["subject"] == "sachin"
+    )
 
 
 def test_error_is_recorded_then_raised(monkeypatch):
@@ -100,7 +113,7 @@ def test_error_is_recorded_then_raised(monkeypatch):
     with pytest.raises(RuntimeError, match="no entry was added"):
         asyncio.run(fn(query="Peanut Butter", date="2015-01-01", ctx=Ctx()))
     assert posts.bodies[0]["reply"] == {"error": "no entry was added"}
-    assert posts.bodies[0]["expected"] == {"entry_absent": "Peanut Butter"}
+    assert posts.bodies[0]["expected"] == {}
 
 
 def test_default_actor_when_no_header(monkeypatch):
@@ -174,7 +187,4 @@ def test_custom_items_target_the_custom_stream():
         "stream": "custom",
         "record_key": "R-CHAT-020 test food",
     }
-    assert posts.bodies[0]["expected"] == {
-        "name": "R-CHAT-020 test food",
-        "kind": "food",
-    }
+    assert posts.bodies[0]["expected"] == {}
