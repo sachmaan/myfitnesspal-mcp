@@ -38,23 +38,34 @@ def _diary(args: dict, reply: Any) -> tuple[str, dict]:
 
 
 def _logged(args: dict, reply: Any) -> tuple[str, dict]:
+    """expected {"diary": <entry name>}: the exact name MFP put in the diary (`added_entries`), which a
+    later `fitness_get_day` observation shows under `diary[].name`; reconcile checks containment."""
     day, _ = _diary(args, reply)
-    logged = reply.get("logged") if isinstance(reply, dict) else None
-    if isinstance(logged, str):
-        return day, {"entry_name": logged}
-    if isinstance(logged, list):
-        return day, {"entry_names": [str(x) for x in logged]}
+    if not isinstance(reply, dict):
+        return day, {}
+    names = [
+        e.get("name")
+        for e in reply.get("added_entries") or []
+        if isinstance(e, dict) and e.get("name")
+    ]
+    if not names and isinstance(reply.get("logged"), str):
+        names = [reply["logged"]]
+    if len(names) == 1:
+        return day, {"diary": names[0]}
     return day, {}
 
 
 def _deleted(args: dict, reply: Any) -> tuple[str, dict]:
     day, _ = _diary(args, reply)
-    return day, {"entry_absent": args.get("query")}
+    return (
+        day,
+        {},
+    )  # absence is not a field; reconcile treats {} as observed on the next read
 
 
 def _modified(args: dict, reply: Any) -> tuple[str, dict]:
     day, expected = _logged(args, reply)
-    return day, expected or {"entry_name": args.get("new_query") or args.get("query")}
+    return day, expected  # nothing exact to expect when MFP names no added entry
 
 
 def _completed(args: dict, reply: Any) -> tuple[str, dict]:
@@ -63,17 +74,11 @@ def _completed(args: dict, reply: Any) -> tuple[str, dict]:
 
 
 def _custom(args: dict, reply: Any) -> tuple[str, dict]:
-    return str(args.get("name") or ""), {
-        "name": args.get("name"),
-        "kind": args.get("kind"),
-    }
+    return str(args.get("name") or ""), {}  # no custom-items stream is observed yet
 
 
 def _custom_gone(args: dict, reply: Any) -> tuple[str, dict]:
-    return str(args.get("name") or ""), {
-        "absent": args.get("name"),
-        "kind": args.get("kind"),
-    }
+    return str(args.get("name") or ""), {}
 
 
 def _measurement(args: dict, reply: Any) -> tuple[str, dict]:
@@ -189,17 +194,14 @@ def wrap(
             error, reply = exc, {"error": str(exc)}
         intent = build(tool_name, args, reply, actor_of(ctx))
         try:
-            intent_id = await asyncio.to_thread(poster, intent)
+            await asyncio.to_thread(poster, intent)
         except Exception as exc:
             logger.warning("intent for %s not recorded: %s", tool_name, exc)
             if isinstance(reply, dict):
                 reply["intent_error"] = str(exc)
-            intent_id = None
         if error is not None:
             raise error
-        if isinstance(reply, dict) and intent_id:
-            reply["intent_id"] = intent_id
-        return reply
+        return reply  # unchanged: the stored reply equals the one the caller sees (R-CHAT-023)
 
     return wrapped
 
