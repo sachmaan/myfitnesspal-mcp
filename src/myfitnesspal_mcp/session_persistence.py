@@ -31,8 +31,8 @@ def session_cookies(client) -> dict[str, str]:
 
 
 def save_session(client) -> None:
-    if config.cookie_env():
-        return
+    if config.cookie_env() or config.auth_url():
+        return  # the auth service owns the stored session; nothing is written here
     cookies = session_cookies(client)
     if auth.SESSION_COOKIE not in cookies or cookies == client.saved_cookies:
         return

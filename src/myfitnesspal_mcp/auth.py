@@ -39,7 +39,48 @@ def _read_saved() -> dict:
     return json.loads(path.read_text())
 
 
+class CredentialUnavailable(RuntimeError):
+    """The auth service holds no usable session (dead, missing, or unreachable)."""
+
+
+def fetch_from_auth_service() -> dict[str, str]:
+    """GET <AUTH_URL>/credentials/<name> with the app key (AD-08). The value is the raw
+    session token. 503 means the service knows the session is dead; the error text then
+    tells the person where to sign in and never quotes a value."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    url = config.auth_url().rstrip("/") + "/credentials/" + config.auth_credential()
+    req = urllib.request.Request(
+        url, headers={"Authorization": "Bearer " + (config.auth_key() or "")}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = _json.load(r)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 503:
+            raise CredentialUnavailable(
+                f"MyFitnessPal session is dead at the auth service: {config.auth_page_hint()}"
+            ) from None
+        raise CredentialUnavailable(
+            f"auth service refused the credential read (HTTP {exc.code})"
+        ) from None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise CredentialUnavailable(
+            f"auth service unreachable ({type(exc).__name__})"
+        ) from None
+    value = body.get("value") if isinstance(body, dict) else None
+    if not value or body.get("state", "ok") != "ok":
+        raise CredentialUnavailable(
+            f"auth service has no live MyFitnessPal session: {config.auth_page_hint()}"
+        )
+    return parse_cookie_input(value)
+
+
 def load_cookies() -> dict[str, str] | None:
+    if config.auth_url():
+        return fetch_from_auth_service()
     env = config.cookie_env()
     if env:
         return parse_cookie_input(env)
@@ -107,6 +148,8 @@ def _validate(cookies: dict[str, str]):
 
 
 def session_source() -> str | None:
+    if config.auth_url():
+        return f"the auth service ({config.auth_credential()})"
     if config.cookie_env():
         return "the MFP_COOKIE environment variable"
     if _read_saved().get("cookies"):

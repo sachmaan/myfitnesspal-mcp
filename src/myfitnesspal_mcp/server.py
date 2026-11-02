@@ -17,6 +17,7 @@ from . import (
     exercise,
     food_logging,
     food_search,
+    intents,
     measurements,
     mfp_client,
     notes,
@@ -103,8 +104,8 @@ async def run_with_refresh(ctx: Context, op: Callable[[], Any]) -> Any:
             result = await asyncio.to_thread(op)
         except Exception as retry_exc:
             await ctx.info("Session refresh failed.")
-            message = mfp_client.RECONNECT_HINT
-            if str(retry_exc) != mfp_client.RECONNECT_HINT:
+            message = mfp_client.reconnect_hint()
+            if str(retry_exc) != message:
                 message = f"{message} (retry after refresh failed: {retry_exc})"
             raise RuntimeError(message) from retry_exc
         await ctx.info("Session refreshed; the retried call succeeded.")
@@ -788,3 +789,7 @@ async def fitness_bulk_export(
         }
 
     return await run_with_refresh(ctx, op)
+
+
+# Platform mode (AD-06): every write tool posts one intent to lake-mcp before it returns.
+intents.install(mcp)

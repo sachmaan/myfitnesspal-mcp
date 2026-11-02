@@ -83,7 +83,9 @@ def refresh_session() -> None:
         if _completed_refreshes != refreshes_seen:
             return
         try:
-            if available() and profile_seeded():
+            if config.auth_url():
+                pass  # the auth service rotates the session; the next client re-reads it
+            elif available() and profile_seeded():
                 harvested = _visit_and_harvest(None)
                 if auth.SESSION_COOKIE in harvested:
                     auth.save_cookies(harvested)
