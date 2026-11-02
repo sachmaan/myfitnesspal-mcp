@@ -116,6 +116,7 @@ def build(tool: str, args: dict, reply: Any, actor: str) -> dict:
     record_key, expected = builder(args, reply)
     return {
         "tool": SERVER_PREFIX + tool,
+        "subject": config.intents_subject(),
         "actor": actor,
         "called_at": datetime.datetime.now(datetime.timezone.utc)
         .isoformat()
@@ -133,8 +134,9 @@ def _plain(value: Any) -> Any:
 
 
 def post(intent: dict, url: str | None = None, attempts: int = 3) -> str:
-    """POST the intent; returns the id lake-mcp assigned. Raises after the last attempt."""
-    url = url or config.intents_url()
+    """POST the intent to <INTENTS_URL>/<tool> (lake-mcp's /actions/<tool>); returns the id lake-mcp assigned.
+    Raises after the last attempt."""
+    url = (url or config.intents_url()).rstrip("/") + "/" + intent["tool"]
     data = json.dumps(intent).encode()
     last: Exception | None = None
     for _ in range(attempts):
@@ -144,7 +146,7 @@ def post(intent: dict, url: str | None = None, attempts: int = 3) -> str:
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
                 body = json.load(r)
-                return str(body.get("id") or body.get("intent_id") or "")
+                return str(body.get("intent_id") or body.get("id") or "")
         except urllib.error.HTTPError as exc:
             last = exc
             if 400 <= exc.code < 500:
