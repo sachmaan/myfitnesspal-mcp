@@ -70,7 +70,7 @@ def saved_meals(client) -> list[dict]:
     return _users_mine(client, "meals", {"limit": 100, "search": ""})
 
 
-def _nutrition_per(contents: dict, divisor: float = 1.0) -> dict:
+def nutrition_per(contents: dict, divisor: float = 1.0) -> dict:
     def per(value):
         return None if value is None else value / divisor
 
@@ -94,7 +94,7 @@ def _food_details(client) -> list[tuple[str, dict]]:
                 shown,
                 {
                     "id": food.get("id"),
-                    "nutrition": _nutrition_per(food.get("nutritional_contents") or {}),
+                    "nutrition": nutrition_per(food.get("nutritional_contents") or {}),
                 },
             )
         )
@@ -137,7 +137,7 @@ def _recipe_details(client) -> list[tuple[str, dict]]:
                 {
                     "recipe_id": recipe.get("id"),
                     "recipe_servings": servings,
-                    "nutrition": _nutrition_per(
+                    "nutrition": nutrition_per(
                         recipe.get("nutritional_contents") or {}, servings
                     ),
                 },
@@ -170,6 +170,13 @@ def kinds(kind: str) -> list[str]:
     if plural not in KINDS:
         raise ValueError(f"kind must be one of: all, {', '.join(KINDS)}")
     return [plural]
+
+
+def single_kind(kind: str) -> str:
+    plurals = kinds(kind)
+    if len(plurals) != 1:
+        raise ValueError("kind must be one of: food, meal, recipe")
+    return plurals[0]
 
 
 def _tab_row(tr, kind: str) -> dict | None:
