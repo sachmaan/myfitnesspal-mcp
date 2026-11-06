@@ -3,10 +3,13 @@ import datetime
 from collections.abc import Callable
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.types import ToolAnnotations
 
 from . import (
+    __version__,
+    day_completion,
     diary,
     exercise,
     food_logging,
@@ -21,7 +24,23 @@ from . import (
 from .food_ranking import MacroTargets
 from .store import Store, trend_column
 
-mcp = FastMCP("myfitnesspal")
+
+class _Server(MCPServer):
+    # mcp 2.x reports any exception that isn't a ToolError as a bare "Error
+    # executing tool", but ours are written for the model to act on (see
+    # no_matching_entry) and never carry cookies or tokens.
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context | None = None
+    ) -> Any:
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            if exc.__cause__ is None:
+                raise
+            raise ToolError(f"Error executing tool {name}: {exc.__cause__}") from exc
+
+
+mcp = _Server("myfitnesspal", version=__version__)
 
 READS_MFP = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 READS_LOCAL = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
@@ -112,10 +131,22 @@ async def refresh_after_write(ctx: Context, day: datetime.date) -> dict:
     return {}
 
 
+async def add_with_session(ctx: Context, op: Callable[[Store, Any], Any]) -> dict:
+    try:
+        return await with_session(ctx, op)
+    except food_logging.UnconfirmedAdd as exc:
+        await refresh_after_write(ctx, exc.day)
+        raise
+
+
 @mcp.tool(title="Get day summary", annotations=READS_MFP)
 async def fitness_get_day(date: str | None = None, ctx: Context = None) -> dict:
     """Nutrition summary, diary entries, the MyFitnessPal daily note, and the
     local feel note for a day.
+
+    `goals` are the day's MyFitnessPal targets (calories, protein, carbs, fat)
+    and `remaining` is goal minus what is logged (negative: over the goal);
+    null where MyFitnessPal has no goal.
 
     date: YYYY-MM-DD (default: today).
     """
@@ -231,6 +262,13 @@ async def fitness_log_food(
     to pick from. With food_id + weight_id (from fitness_search_food): logs
     exactly that item, `query` being its display name.
 
+    A logged result lists `added_entries` (meal, name): what MyFitnessPal
+    actually put in the diary. MyFitnessPal accepts any food_id, so if the
+    names are not the food you meant, delete them. An error saying no entry
+    was added means nothing was logged. An error saying the diary could not
+    be read back means the food may be logged: check with fitness_get_day
+    before logging it again.
+
     meal: breakfast|lunch|dinner|snacks (default breakfast) or any meal name
     on the account. quantity: number of servings (default 1).
     date: YYYY-MM-DD (default today).
@@ -271,7 +309,7 @@ async def fitness_log_food(
             )
         raise ValueError("pass draft_id + option, food_id + weight_id, or query")
 
-    result = await with_session(ctx, op)
+    result = await add_with_session(ctx, op)
     if not result.get("logged"):
         return {"ok": True, **result}
     refresh_warning = await refresh_after_write(
@@ -373,10 +411,34 @@ async def fitness_modify_food(
             serving=serving,
         )
 
-    result = await with_session(ctx, op)
+    result = await add_with_session(ctx, op)
     if result.get("needs_choice"):
         return {"ok": True, **result}
     return {"ok": True, **result, **await refresh_after_write(ctx, day)}
+
+
+@mcp.tool(title="Complete diary day", annotations=SETS_IN_MFP)
+async def fitness_complete_day(
+    complete: bool | None = None, date: str | None = None, ctx: Context = None
+) -> dict:
+    """Report whether a MyFitnessPal diary day is marked complete, or mark it
+    complete (the Food tab's "Complete This Entry") or reopen it.
+
+    complete: omit (default) to only report the state; true to mark the day
+    complete; false to reopen it ("Make Additional Entries").
+    date: YYYY-MM-DD (default: today). `complete` is null when the diary page
+    has no completion section. On a complete day, `message` is MyFitnessPal's
+    text under the button: its five-week weight projection, or a warning that
+    the day is under the calorie minimum; otherwise it is null.
+    """
+    day = parse_day(date)
+
+    def op(store, client):
+        if complete is None:
+            return day_completion.day_state(client, day)
+        return day_completion.set_day_complete(client, day, complete)
+
+    return {"ok": True, **await with_session(ctx, op)}
 
 
 @mcp.tool(title="Log weight", annotations=SETS_IN_MFP)
@@ -571,8 +633,8 @@ async def fitness_bulk_export(
     ctx: Context = None,
 ) -> dict:
     """Export a whole date range at once for analysis: per-day nutrition
-    totals, food entries with macros, the MyFitnessPal daily note, and local
-    feel notes. Read-only.
+    totals, goals and remaining, food entries with macros, the MyFitnessPal
+    daily note, and local feel notes. Read-only.
 
     start/end: YYYY-MM-DD (default: last 30 days ending today).
     sync_first: gap-fill from MyFitnessPal before exporting. Off by default so

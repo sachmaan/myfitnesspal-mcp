@@ -8,6 +8,39 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `fitness_complete_day` reports whether a diary day is marked complete, or
+  marks it complete or reopens it, as the website's "Complete This Entry"
+  button does. A bare call only reports.
+- Day records (`fitness_get_day`, the `day` in write results, and
+  `fitness_bulk_export`) include `goals` (calories, protein, carbs, fat) and
+  `remaining` (goal minus logged; negative means over the goal).
+
+### Changed
+
+- The cache database gains three `day_nutrition` columns (`goal_protein`,
+  `goal_carbs`, `goal_fat`), added in place on first start. No refetch
+  happens on upgrade, so days cached by an earlier release show null
+  protein, carbs and fat goals in `fitness_bulk_export` until
+  `fitness_get_day` or a write refetches them.
+- Food log results include `added_entries`: the diary entries MyFitnessPal
+  actually added, read back from the diary.
+
+### Changed
+
+- A food log that adds nothing to the diary now fails with an error instead
+  of reporting success. MyFitnessPal answers `/food/add` with 200 for any
+  `food_id`/`weight_id`, so a stale or invented id used to look logged.
+  Each log reads the day's diary once more to check. When
+  `fitness_modify_food`'s replacement adds nothing, the error says the
+  original entry was already removed. When the read-back itself fails, the
+  log fails with an error that says the food may already be in the diary,
+  and the session refresh does not re-send the add. In `fitness_modify_food`
+  that error also says the original entry was removed.
+
+## [0.5.0] - 2026-11-03
+
+### Added
+
 - An icon, a website link and a clearer description in `server.json`, so the
   MCP Registry and the directories that mirror it show the server properly.
 - `glama.json`, so the Glama listing can be claimed from the repo.
@@ -17,6 +50,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- mfp-mcp now runs on the MCP Python SDK 2.x and requires `mcp>=2.1,<3`
+  (it required `mcp<2` before). Tools, their arguments and their results are
+  unchanged, and tool errors still reach the model with their full message.
+  The server now reports its own version to clients instead of the SDK's.
+  With `--http`, sessions idle for 30 minutes are closed and the client has
+  to initialize again; clients that keep the event stream open, as the SDK's
+  own does, aren't affected. On upgrade: nothing to do if you run it through
+  `uvx` or in its own environment. If you installed it into an environment
+  where something else pins `mcp<2`, that package has to allow mcp 2.x first,
+  or stay on mfp-mcp 0.4.x.
+- mfp-mcp no longer depends on python-myfitnesspal. The parts the server used
+  (signing in with the session cookie and reading the food diary, exercise
+  diary, weight history and food details) now live in this repo, trimmed to
+  what the server needs and adapted to its `curl_cffi` session; NOTICE keeps
+  python-myfitnesspal's MIT license. Installs drop the 19 packages it pulled in
+  (among them `cloudscraper`, `browser_cookie3`, `requests` and `sympy`) and
+  the caps it put on `lxml` (<6), `rich` (<13) and `typing-extensions`
+  (==4.12.2), the last of which kept mcp 2.x from installing next to mfp-mcp.
+  MyFitnessPal sees the same requests, minus a redundant page load per weight
+  sync. Nothing to do on upgrade.
 - `auth --check` renews the session as it checks and saves the cookie
   MyFitnessPal re-issues, and exits 1 when MyFitnessPal won't renew the
   session, so a scheduled check keeps an idle session alive and warns before
@@ -27,6 +80,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A weigh-in MyFitnessPal lists without a value no longer syncs into the
+  cache as 0.
+- `fitness_get_exercise` no longer fails when an exercise table has a column
+  without a heading, such as the delete column.
 - Saved sessions no longer stop working within about a day. Building a
   client can sign in again through `/account/login`, which issues a new
   session token and refresh token on every call; the server kept them in
@@ -230,7 +287,8 @@ All notable changes to this project are documented here. The format follows
   auto-refresh, stdio and streamable HTTP transports. Published to PyPI as
   `mfp-mcp`.
 
-[Unreleased]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Mason-Levyy/myfitnesspal-mcp/compare/v0.4.0...v0.4.1

@@ -1,9 +1,10 @@
 import asyncio
+import datetime
 
 import pytest
-from myfitnesspal.exceptions import MyfitnesspalLoginError
+from mcp.server.mcpserver.exceptions import ToolError
 
-from myfitnesspal_mcp import mfp_client, server
+from myfitnesspal_mcp import diary, food_logging, mfp_client, server
 from myfitnesspal_mcp.store import Store
 
 
@@ -16,7 +17,7 @@ class FakeContext:
 
 
 def test_is_auth_error_patterns():
-    assert mfp_client.is_auth_error(MyfitnesspalLoginError("bad"))
+    assert mfp_client.is_auth_error(mfp_client.ProfileUnavailable("x"))
     assert mfp_client.is_auth_error(mfp_client.NotConnectedError("x"))
     assert mfp_client.is_auth_error(RuntimeError("HTTP 403 returned"))
     assert mfp_client.is_auth_error(RuntimeError("couldn't read the csrf token"))
@@ -35,7 +36,7 @@ def test_run_with_refresh_retries_auth_failures(monkeypatch):
     def op():
         attempts.append(1)
         if len(attempts) == 1:
-            raise MyfitnesspalLoginError("session expired")
+            raise mfp_client.NotConnectedError("session expired")
         return "second try"
 
     ctx = FakeContext()
@@ -60,7 +61,7 @@ def test_run_with_refresh_gives_clear_error_when_retry_fails(monkeypatch):
     monkeypatch.setattr(server.refresh, "refresh_session", lambda: None)
 
     def op():
-        raise MyfitnesspalLoginError("still expired")
+        raise mfp_client.NotConnectedError("still expired")
 
     ctx = FakeContext()
     with pytest.raises(RuntimeError, match="uvx mfp-mcp auth"):
@@ -173,7 +174,8 @@ def test_log_food_with_explicit_ids(connected):
         )
     )
     assert result["source"] == "ids"
-    _, _, kwargs = connected.session.calls[-1]
+    adds = [c for c in connected.session.calls if c[0] == "POST" and "food/add" in c[1]]
+    _, _, kwargs = adds[-1]
     assert kwargs["data"]["food_entry[weight_id]"] == "20"
 
 
@@ -193,7 +195,7 @@ def refresh_expires_once(connected, monkeypatch):
     def flaky_refresh(store, client, day):
         refresh_calls.append(day)
         if len(refresh_calls) == 1:
-            raise MyfitnesspalLoginError("session expired")
+            raise mfp_client.NotConnectedError("session expired")
 
     monkeypatch.setattr(server.sync, "refresh_day", flaky_refresh)
     return refresh_calls
@@ -240,7 +242,7 @@ def test_failed_refresh_after_write_warns_instead_of_raising(connected, monkeypa
     monkeypatch.setattr(server.refresh, "refresh_session", lambda: None)
 
     def always_expired(store, client, day):
-        raise MyfitnesspalLoginError("session expired")
+        raise mfp_client.NotConnectedError("session expired")
 
     monkeypatch.setattr(server.sync, "refresh_day", always_expired)
     result = asyncio.run(
@@ -249,6 +251,51 @@ def test_failed_refresh_after_write_warns_instead_of_raising(connected, monkeypa
     assert result["ok"] is True
     assert "don't repeat" in result["refresh_warning"]
     assert len(posts_to(connected, "food/remove")) == 1
+
+
+@pytest.fixture
+def refreshed_days(connected, monkeypatch):
+    days = []
+    monkeypatch.setattr(
+        server.sync, "refresh_day", lambda store, client, day: days.append(day)
+    )
+    return days
+
+
+def test_modify_food_refreshes_the_day_when_the_replacement_adds_nothing(
+    connected, refreshed_days, diary_html, make_response
+):
+    connected.session.route("GET", "food/diary?date=", make_response(text=diary_html))
+    with pytest.raises(food_logging.NothingLogged, match="Removed 'Coffee"):
+        asyncio.run(
+            server.fitness_modify_food(
+                query="coffee", new_query="banana", date="2026-07-08", ctx=FakeContext()
+            )
+        )
+    assert refreshed_days == [datetime.date(2026, 7, 8)]
+
+
+def test_log_food_refreshes_the_day_when_the_read_back_fails(
+    connected, refreshed_days, diary_html, make_response
+):
+    def diary_page(calls):
+        if any(m == "POST" and "food/add" in url for m, url, _ in calls):
+            raise RuntimeError("diary page did not load")
+        return make_response(text=diary_html)
+
+    connected.session.route("GET", "food/diary?date=", diary_page)
+    with pytest.raises(food_logging.UnverifiedAdd):
+        asyncio.run(
+            server.fitness_log_food(
+                query="Banana",
+                food_id="111",
+                weight_id="20",
+                date="2026-07-08",
+                ctx=FakeContext(),
+            )
+        )
+    assert refreshed_days == [datetime.date(2026, 7, 8)]
+    assert len(posts_to(connected, "food/add")) == 1
 
 
 def test_pin_tools(local_store):
@@ -300,11 +347,11 @@ def test_tools_list_without_a_session(monkeypatch):
     assert tools
     for tool in tools:
         assert tool.title, tool.name
-        assert tool.annotations.readOnlyHint is not None, tool.name
-        assert tool.annotations.openWorldHint is not None, tool.name
-        if not tool.annotations.readOnlyHint:
-            assert tool.annotations.destructiveHint is not None, tool.name
-            assert tool.annotations.idempotentHint is not None, tool.name
+        assert tool.annotations.read_only_hint is not None, tool.name
+        assert tool.annotations.open_world_hint is not None, tool.name
+        if not tool.annotations.read_only_hint:
+            assert tool.annotations.destructive_hint is not None, tool.name
+            assert tool.annotations.idempotent_hint is not None, tool.name
 
 
 def test_tools_that_remove_or_overwrite_are_marked_destructive():
@@ -314,6 +361,24 @@ def test_tools_that_remove_or_overwrite_are_marked_destructive():
         "fitness_delete_exercise",
         "fitness_modify_food",
     ]:
-        assert tools[name].annotations.destructiveHint, name
-    assert not tools["fitness_log_food"].annotations.destructiveHint
-    assert not tools["fitness_log_food"].annotations.idempotentHint
+        assert tools[name].annotations.destructive_hint, name
+    assert not tools["fitness_log_food"].annotations.destructive_hint
+    assert not tools["fitness_log_food"].annotations.idempotent_hint
+
+
+def test_tool_errors_reach_the_model_with_their_message():
+    with pytest.raises(ToolError, match="pass query, or clear_all=True"):
+        asyncio.run(server.mcp.call_tool("fitness_clear_food_pin", {}))
+
+
+def test_unknown_meal_error_lists_the_configured_meals(monkeypatch):
+    def unknown_meal(*args, **kwargs):
+        raise diary.UnknownMeal(
+            "no MyFitnessPal meal named 'brunch'. Configured meals: Breakfast"
+        )
+
+    monkeypatch.setattr(server, "with_session", unknown_meal)
+    with pytest.raises(ToolError, match="Configured meals: Breakfast"):
+        asyncio.run(
+            server.mcp.call_tool("fitness_log_food", {"query": "egg", "meal": "brunch"})
+        )
