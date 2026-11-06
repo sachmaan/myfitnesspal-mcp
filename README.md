@@ -164,7 +164,7 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 
 | Tool | What it does |
 | --- | --- |
-| `fitness_get_day` | Nutrition totals, diary entries, the MFP daily note, and feel note for a day |
+| `fitness_get_day` | Nutrition totals, goals and remaining macros, diary entries, the MFP daily note, and feel note for a day |
 | `fitness_search_food` | Candidate matches with brand, calories, macros, serving, and ids |
 | `fitness_draft_food` | Numbered options with every serving size, filtered/ranked by optional calorie and macro targets |
 | `fitness_log_food` | Log a draft option (and serving), a remembered food, or exact ids to the real diary |
@@ -181,7 +181,7 @@ Then use the same `--from 'mfp-mcp[autorefresh]'` form in your client config
 | `fitness_log_note` | Write that daily note to MFP (replace, or `append` a new line) |
 | `fitness_log_feel` | Save a subjective "how I feel" note (stored locally, never sent to MFP) |
 | `fitness_get_trends` | One metric over a date range: weight, calories_in, protein, carbs, fat |
-| `fitness_bulk_export` | Whole date range in one call, for analysis |
+| `fitness_bulk_export` | Whole date range in one call, including goals and remaining macros |
 
 ### Logging flow
 
@@ -241,7 +241,9 @@ The default transport is stdio. For network clients:
 mfp-mcp --http --host 127.0.0.1 --port 8484
 ```
 
-This serves streamable HTTP at `/mcp`. **There is no built-in authentication —
+This serves streamable HTTP at `/mcp`. A session idle for 30 minutes is closed,
+and the client has to reconnect; clients that keep the event stream open aren't
+affected. **There is no built-in authentication —
 never expose it to the internet.** Bind to localhost and front it with
 something that authenticates for you: a VPN/tailnet (e.g. `tailscale serve`),
 an authenticating reverse proxy, or an OAuth-aware MCP gateway.
@@ -302,10 +304,9 @@ MCP client and model you connect it to.
 
 ## How it works
 
-- [python-myfitnesspal](https://github.com/coddingtonbear/python-myfitnesspal)
-  parses the diary, measurements, and exercise pages — run over a `curl_cffi`
-  session that impersonates Chrome's TLS fingerprint so Cloudflare lets it
-  through with just the NextAuth session cookie.
+- Every request runs over a `curl_cffi` session that impersonates Chrome's TLS
+  fingerprint, so Cloudflare lets it through with just the NextAuth session
+  cookie. The diary, exercise, and measurements pages are parsed with `lxml`.
 - Writes replicate the web app's own XHR calls: the legacy food-search page
   supplies the `food_id`/`weight_id` that `/food/add` accepts, deletes go
   through `/food/remove`, water reads/writes via `/food/water`, and the daily
@@ -343,6 +344,17 @@ how other MyFitnessPal users find it in GitHub search and MCP directories. Bug
 reports and endpoint captures are just as welcome in
 [issues](https://github.com/Mason-Levyy/myfitnesspal-mcp/issues).
 
+## Credits
+
+The sign-in and the diary, exercise, weight, and food-detail parsing started as
+[python-myfitnesspal](https://github.com/coddingtonbear/python-myfitnesspal) by
+Adam Coddington, which this project used as a dependency through 0.4.x. That code
+now lives in this repo, trimmed to what the server uses and adapted to its
+`curl_cffi` session, under python-myfitnesspal's MIT license (see
+[NOTICE](NOTICE)). Thanks to Adam and its contributors for years of keeping up
+with MyFitnessPal's site.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Code adapted from python-myfitnesspal keeps its own MIT license
+notice in [NOTICE](NOTICE).
